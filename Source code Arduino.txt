@@ -1,0 +1,155 @@
+#include <Wire.h>
+#include <OneWire.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+#include <dht.h>  // Include library
+#define outPin 2  // Defines pin number to which the sensor is connected
+
+dht DHT;  // Creates a DHT object
+
+// // Pin Assignments
+const int voltageSensorPin = A2;  // Voltage sensor input
+const int currentSensorPin = A3;  // Current sensor input
+const int relayMotorPin = 4;      // Relay for motor
+const int relayFanPin = 3;        // Relay for fan
+const int relayBatteryPin = 5;    // Relay for battery charger
+const int relayChargerPin = 6;    // Relay for mobile charger
+
+// LED Pins
+const int ledTemperaturePin = 8;
+const int ledBattery50Pin = 9;
+const int ledBattery75Pin = 10;
+
+void setup() {
+  Serial.begin(9600);
+
+  pinMode(relayMotorPin, OUTPUT);
+  pinMode(relayFanPin, OUTPUT);
+  pinMode(relayChargerPin, OUTPUT);
+  pinMode(relayBatteryPin, OUTPUT);
+
+  // Define LED pins as outputs
+  pinMode(ledBattery50Pin, OUTPUT);
+  pinMode(ledBattery75Pin, OUTPUT);
+  pinMode(ledTemperaturePin, OUTPUT);
+
+  // Initialize all relays to HIGH (inactive state for active-low relays)
+  digitalWrite(relayMotorPin, HIGH);    // Motor relay off
+  digitalWrite(relayFanPin, HIGH);      // Fan relay off
+  digitalWrite(relayChargerPin, HIGH);  // Charger relay off
+  digitalWrite(relayBatteryPin, HIGH);  // Battery relay off
+
+  // Initialize LED states to LOW (off state)
+  digitalWrite(ledBattery50Pin, LOW);
+  digitalWrite(ledBattery75Pin, LOW);
+  digitalWrite(ledTemperaturePin, LOW);
+
+  lcd.begin(16, 2);
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("System Ready!");
+}
+
+void loop() {
+  float voltageSensorValue = analogRead(voltageSensorPin) * (5.0 / 1023.0);
+  float voltage = voltageSensorValue * 5.0;
+  float current = analogRead(currentSensorPin) * (5.0 / 1023.0);
+
+
+  int batteryPercentage = 0;
+  if (voltage >= 10.0) batteryPercentage = 100;
+  if (voltage >= 9.0 && voltage < 10.0) batteryPercentage = 75;
+  if (voltage >= 8.0 && voltage < 9.0) batteryPercentage = 50;
+  if (voltage >= 7.0 && voltage < 8.0) batteryPercentage = 25;
+  if (voltage < 7.0) batteryPercentage = 0;
+
+  int readData = DHT.read11(outPin);
+  float t = DHT.temperature;  // Read temperature
+  float h = DHT.humidity;     // Read humidity
+
+
+
+  String data = "a" + String(voltage, 2) + "b" + String(current, 2) + "c" + String(t, 2)+ "d"+ String(batteryPercentage)+"e";
+  Serial.println(data);
+
+  lcd.setCursor(0, 0);
+  lcd.print("V: ");
+  lcd.print(voltage, 2);
+  lcd.print(" T:");
+  lcd.print(t, 1);
+
+  lcd.setCursor(0, 1);
+  lcd.print("C: ");
+  lcd.print(current, 2);
+  lcd.print(" B:");
+  lcd.print(batteryPercentage);
+  lcd.print("%");
+
+  // Motor Control
+  if (t >= 29) {
+    digitalWrite(relayMotorPin, HIGH);  // Turn off motor
+  }
+  if (t < 29) {
+    if (voltage >= 7) {
+      digitalWrite(relayMotorPin, LOW);  // Turn on motor
+    }
+  }
+
+  // Fan Control
+  if (t > 29) {
+    digitalWrite(relayFanPin, LOW);  // Turn on fan
+  }
+  if (t <= 29) {
+    digitalWrite(relayFanPin, HIGH);  // Turn off fan
+  }
+
+  // Charger Control
+  if (voltage < 7) {
+    digitalWrite(relayChargerPin, HIGH);  // Turn off charger
+    digitalWrite(relayBatteryPin, LOW);   // Turn on battery charge
+    digitalWrite(relayMotorPin, HIGH);    // Turn on motor
+  }
+  if (voltage >= 7) {
+    if (t < 29) {
+      digitalWrite(relayChargerPin, LOW);   // Ensure charger stays on
+      digitalWrite(relayMotorPin, LOW);     // Turn on motor
+      digitalWrite(relayBatteryPin, HIGH);  // Turn on battery charge
+    }
+  }
+  if (t > 29) {
+    digitalWrite(relayChargerPin, HIGH);  // Turn off charger
+    digitalWrite(relayBatteryPin, HIGH);  // Turn off battery charge
+  }
+
+  // LED Indicators and Buzzer
+  if (voltage < 7) {
+    digitalWrite(ledBattery50Pin, LOW);
+    digitalWrite(ledBattery75Pin, LOW);
+    delay(500);
+    digitalWrite(ledBattery50Pin, HIGH);
+    digitalWrite(ledBattery75Pin, HIGH);
+    delay(500);
+  }
+  if (voltage > 7) {
+    if (voltage < 9) {
+      digitalWrite(ledBattery50Pin, LOW);
+      digitalWrite(ledBattery75Pin, HIGH);
+    }
+    if (voltage >= 9) {
+      digitalWrite(ledBattery50Pin, HIGH);
+      digitalWrite(ledBattery75Pin, HIGH);
+    }
+  }
+
+  // Temperature LED Indicator
+  if (t > 29) {
+    digitalWrite(ledTemperaturePin, HIGH);  // High temperature indicator
+  }
+  if (t <= 29) {
+    digitalWrite(ledTemperaturePin, LOW);  // Low temperature indicator
+  }
+
+  delay(1000);  // 1-second interval
+}
